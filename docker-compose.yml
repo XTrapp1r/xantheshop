@@ -1,0 +1,14 @@
+services:
+  bot:
+    build: .
+    image: xantheshop-bot
+    env_file: .env
+    environment:
+      # БД в примонтированном volume, чтобы данные сохранялись между перезапусками
+      DATABASE_URL: sqlite+aiosqlite:///data/shop.db
+    volumes:
+      - botdata:/data
+    restart: unless-stopped
+
+volumes:
+  botdata:

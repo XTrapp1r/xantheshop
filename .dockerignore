@@ -1,0 +1,27 @@
+# Секреты и БД — в контейнер не копируем, подставляются через env/volume
+.env
+*.db
+shop.db
+data/
+
+# Git и IDE
+.git
+.gitignore
+.idea
+.vscode
+.cursor
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+.venv
+venv
+env
+
+# Прочее
+README.md
+*.md
+Dockerfile
+.dockerignore
+docker-compose.yml
