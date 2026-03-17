@@ -53,6 +53,7 @@ class Product(Base):
     price: Mapped[int] = mapped_column(Integer, nullable=False)  # цена в рублях
     image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    payment_url: Mapped[str] = mapped_column(String(1024), nullable=False)
 
     category: Mapped["Category"] = relationship(back_populates="products")
     orders: Mapped[list["Order"]] = relationship(back_populates="product")

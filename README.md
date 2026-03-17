@@ -75,6 +75,8 @@
    docker compose up -d --build
    ```
 
+   Используйте **`docker compose`** (с пробелом, V2), а не `docker-compose` (через дефис, старый V1). На старом V1 при пересоздании контейнера может возникать ошибка `KeyError: 'ContainerConfig'`. Если она уже появилась: `docker compose down`, затем `docker rmi xantheshop-bot`, затем снова `docker compose up -d --build`. Либо установите Compose V2: `apt install docker-compose-plugin` (Linux).
+
    Бот будет работать в фоне; SQLite-файл хранится в Docker-volume `botdata` и не теряется при перезапуске.
 
 4. Остановка: `docker compose down`. Данные БД сохраняются в volume. Полная очистка с удалением БД: `docker compose down -v`.

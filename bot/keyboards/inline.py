@@ -155,29 +155,15 @@ def user_order_actions_kb(order_id: int) -> InlineKeyboardMarkup:
 
 def order_payment_kb(order_id: int) -> InlineKeyboardMarkup:
     """
-    Клавиатура экрана оплаты заказа.
+    Клавиатура экрана оплаты заказа:
+    - внешняя ссылка на оплату
+    - проверка оплаты
+    - отмена заказа
     """
     builder = InlineKeyboardBuilder()
     builder.button(
         text="💳 Оплатить",
-        callback_data=f"pay:start:{order_id}",
-    )
-    builder.button(
-        text="❌ Отменить заказ",
-        callback_data=f"user:cancel_order:{order_id}",
-    )
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def fake_payment_kb(order_id: int) -> InlineKeyboardMarkup:
-    """
-    Клавиатура для fake-режима оплаты.
-    """
-    builder = InlineKeyboardBuilder()
-    builder.button(
-        text="✅ Тестово подтвердить оплату",
-        callback_data=f"pay:fake_confirm:{order_id}",
+        url="https://example.com",  # реальная ссылка подставляется из payment_url в тексте/отдельном сообщении
     )
     builder.button(
         text="🔄 Проверить оплату",

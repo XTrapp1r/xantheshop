@@ -376,18 +376,36 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer()
         return
 
-    # создаём "платёж" (в fake-режиме просто записываем данные)
+    # создаём платёж (без API, только ссылка и служебные поля)
     order = await payment_service.create_payment_for_order(order)
 
     await state.clear()
 
-    await callback.message.answer(
-        f"🎉 <b>Ваш заказ №{order.id} создан.</b>\n\n"
-        f"Товар: <b>{order.product_name_snapshot}</b>\n"
-        f"Количество: <b>{order.quantity}</b>\n"
-        f"Сумма: <b>{order.total_price} ₽</b>\n"
-        f"Статус: <b>Ожидает оплаты</b>.",
-        reply_markup=order_payment_kb(order.id),
+    payment_link = order.payment_url or ""
+
+    text = (
+        "✅ Ваш заказ создан\n\n"
+        "💸 Оплатите по ссылке ниже:\n"
+        "После оплаты нажмите:\n"
+        "🔄 Проверить оплату"
     )
+
+    if payment_link:
+        await callback.message.answer(
+            text,
+            reply_markup=order_payment_kb(order.id),
+        )
+        await callback.message.answer(
+            "Ссылка на оплату:",
+            reply_markup=None,
+        )
+        await callback.message.answer(payment_link)
+    else:
+        await callback.message.answer(
+            "Заказ создан, но ссылка на оплату временно недоступна. "
+            "Пожалуйста, свяжитесь с поддержкой.",
+            reply_markup=order_payment_kb(order.id),
+        )
+
     await callback.answer("Заказ успешно создан, ожидает оплаты.")
 

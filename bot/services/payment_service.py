@@ -2,57 +2,67 @@ from typing import Tuple
 
 from sqlalchemy import select
 
-from bot.config import load_config
 from bot.database.db import AsyncSessionLocal
-from bot.database.models import Order, OrderStatus, User
-
-config = load_config()
+from bot.database.models import Order, OrderStatus, Product, User
 
 
 async def create_payment_for_order(order: Order) -> Order:
     """
-    Создаёт (или подготавливает) платёж для заказа.
+    Подготавливает платёж для заказа без вызова внешних API.
 
-    В fake-режиме просто сохраняем тестовые данные в полях оплаты.
+    Логика:
+    - payment_status = "pending"
+    - payment_url берётся из связанного товара (Product.payment_url)
+    - payment_id — любой UUID (строка)
     """
+    import uuid
+
     async with AsyncSessionLocal() as session:
         res = await session.execute(select(Order).where(Order.id == order.id))
         db_order = res.scalar_one_or_none()
         if db_order is None:
             return order
 
-        if config.PAYMENT_MODE == "fake":
-            db_order.payment_provider = "fake"
-            db_order.payment_status = "pending"
-            db_order.payment_id = str(db_order.id)
-            db_order.payment_url = None
+        if db_order.product_id is None:
+            return db_order
+
+        prod_res = await session.execute(
+            select(Product).where(Product.id == db_order.product_id)
+        )
+        product = prod_res.scalar_one_or_none()
+        if product is None:
+            return db_order
+
+        db_order.payment_provider = "pally"
+        db_order.payment_status = "pending"
+        db_order.payment_id = str(uuid.uuid4())
+        db_order.payment_url = product.payment_url
 
         await session.commit()
         await session.refresh(db_order)
         return db_order
 
 
-async def get_payment_status(order: Order) -> str:
+async def get_payment_status(order_id: int) -> str:
     """
-    Возвращает статус оплаты заказа (для fake-режима — значение из поля payment_status).
+    Возвращает статус оплаты заказа.
     """
     async with AsyncSessionLocal() as session:
-        res = await session.execute(select(Order).where(Order.id == order.id))
+        res = await session.execute(select(Order).where(Order.id == order_id))
         db_order = res.scalar_one_or_none()
         if db_order is None:
             return "unknown"
         return db_order.payment_status or "pending"
 
 
-async def confirm_fake_payment(order_id: int) -> Tuple[Order | None, User | None]:
+async def confirm_manual_payment(order_id: int) -> Tuple[Order | None, User | None]:
     """
-    Тестовое подтверждение оплаты.
+    Ручное подтверждение оплаты пользователем.
 
-    Меняет статус заказа на PAID и payment_status на paid.
+    Меняет:
+    - payment_status -> "paid"
+    - order.status -> OrderStatus.PAID
     """
-    if config.PAYMENT_MODE != "fake":
-        return None, None
-
     async with AsyncSessionLocal() as session:
         res = await session.execute(
             select(Order, User)
@@ -64,7 +74,10 @@ async def confirm_fake_payment(order_id: int) -> Tuple[Order | None, User | None
             return None, None
 
         order, user = row
-        order.payment_provider = "fake"
+
+        if order.payment_status == "paid":
+            return order, user
+
         order.payment_status = "paid"
         order.status = OrderStatus.PAID
 
@@ -76,7 +89,7 @@ async def confirm_fake_payment(order_id: int) -> Tuple[Order | None, User | None
 
 async def cancel_order(order_id: int) -> Order | None:
     """
-    Отмена заказа вместе с оплатой (в fake-режиме просто помечаем как cancelled).
+    Отмена заказа вместе с оплатой.
     """
     async with AsyncSessionLocal() as session:
         res = await session.execute(select(Order).where(Order.id == order_id))
@@ -85,7 +98,7 @@ async def cancel_order(order_id: int) -> Order | None:
             return None
 
         order.status = OrderStatus.CANCELLED
-        order.payment_status = "cancelled"
+        order.payment_status = "failed"
 
         await session.commit()
         await session.refresh(order)

@@ -39,21 +39,24 @@ async def seed_initial_data() -> None:
         brawl_products_spec = [
             (
                 "Brawl Pass",
-                690,
+                790,
                 "Стандартный боевой пропуск для Brawl Stars.",
+                "https://pally.info/transfer/w7eoaXNQmp",
             ),
             (
                 "Brawl Pass Plus",
-                890,
+                990,
                 "Расширенный боевой пропуск с дополнительными наградами.",
+                "https://pally.info/transfer/rmdWAxBJvV",
             ),
         ]
-        for name, price, desc in brawl_products_spec:
+        for name, price, desc, payment_url in brawl_products_spec:
             existing = await _get_product_by_name(session, brawl.id, name)
             if existing:
                 existing.price = price
                 existing.description = desc
                 existing.is_active = True
+                existing.payment_url = payment_url
             else:
                 session.add(
                     Product(
@@ -63,25 +66,27 @@ async def seed_initial_data() -> None:
                         price=price,
                         image_url=None,
                         is_active=True,
+                        payment_url=payment_url,
                     )
                 )
 
         # Clash Royale: создаём базовые товары, если их ещё нет
         royale_products_spec = [
             (
-                "Clash Royale: Pass Royale",
-                499,
-                "Сезонный пропуск с наградами.",
-            ),
-            (
-                "Clash Royale: 500 Gems",
-                379,
-                "Набор гемов для ускорения прогресса.",
+                "Pass Royale",
+                1090,
+                "Сезонный пропуск Clash Royale с наградами.",
+                "https://pally.info/transfer/MvY4neYe71",
             ),
         ]
-        for name, price, desc in royale_products_spec:
+        for name, price, desc, payment_url in royale_products_spec:
             existing = await _get_product_by_name(session, royale.id, name)
-            if not existing:
+            if existing:
+                existing.price = price
+                existing.description = desc
+                existing.is_active = True
+                existing.payment_url = payment_url
+            else:
                 session.add(
                     Product(
                         category_id=royale.id,
@@ -90,34 +95,11 @@ async def seed_initial_data() -> None:
                         price=price,
                         image_url=None,
                         is_active=True,
+                        payment_url=payment_url,
                     )
                 )
 
         # Clash of Clans: создаём базовые товары, если их ещё нет
-        coc_products_spec = [
-            (
-                "Clash of Clans: Gold Pass",
-                449,
-                "Ежемесячный пропуск с бустами.",
-            ),
-            (
-                "Clash of Clans: 1200 Gems",
-                749,
-                "Популярный набор гемов.",
-            ),
-        ]
-        for name, price, desc in coc_products_spec:
-            existing = await _get_product_by_name(session, coc.id, name)
-            if not existing:
-                session.add(
-                    Product(
-                        category_id=coc.id,
-                        name=name,
-                        description=desc,
-                        price=price,
-                        image_url=None,
-                        is_active=True,
-                    )
-                )
+        # Clash of Clans: пока не используем в витрине — оставляем категорию пустой
 
         await session.commit()
