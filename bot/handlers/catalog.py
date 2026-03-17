@@ -385,27 +385,15 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext) -> None:
 
     text = (
         "✅ Ваш заказ создан\n\n"
-        "💸 Оплатите по ссылке ниже:\n"
+        "💸 Оплатите по ссылке ниже (кнопка «Оплатить»).\n"
         "После оплаты нажмите:\n"
         "🔄 Проверить оплату"
     )
 
-    if payment_link:
-        await callback.message.answer(
-            text,
-            reply_markup=order_payment_kb(order.id),
-        )
-        await callback.message.answer(
-            "Ссылка на оплату:",
-            reply_markup=None,
-        )
-        await callback.message.answer(payment_link)
-    else:
-        await callback.message.answer(
-            "Заказ создан, но ссылка на оплату временно недоступна. "
-            "Пожалуйста, свяжитесь с поддержкой.",
-            reply_markup=order_payment_kb(order.id),
-        )
+    await callback.message.answer(
+        text,
+        reply_markup=order_payment_kb(order.id, payment_link),
+    )
 
     await callback.answer("Заказ успешно создан, ожидает оплаты.")
 

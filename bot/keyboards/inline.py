@@ -1,4 +1,4 @@
-from typing import Iterable
+from typing import Iterable, Optional
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -153,7 +153,7 @@ def user_order_actions_kb(order_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def order_payment_kb(order_id: int) -> InlineKeyboardMarkup:
+def order_payment_kb(order_id: int, payment_url: Optional[str] = None) -> InlineKeyboardMarkup:
     """
     Клавиатура экрана оплаты заказа:
     - внешняя ссылка на оплату
@@ -161,10 +161,11 @@ def order_payment_kb(order_id: int) -> InlineKeyboardMarkup:
     - отмена заказа
     """
     builder = InlineKeyboardBuilder()
-    builder.button(
-        text="💳 Оплатить",
-        url="https://example.com",  # реальная ссылка подставляется из payment_url в тексте/отдельном сообщении
-    )
+    if payment_url:
+        builder.button(
+            text="💳 Оплатить",
+            url=payment_url,
+        )
     builder.button(
         text="🔄 Проверить оплату",
         callback_data=f"pay:check:{order_id}",

@@ -132,5 +132,10 @@ async def user_cancel_order(callback: CallbackQuery) -> None:
         f"Статус: {human_status(order.status)}",
     )
 
+    await callback.message.answer(
+        "Оформление заказа отменено.",
+        reply_markup=main_menu_kb(),
+    )
+
     await callback.answer("Заказ отменён.")
 
