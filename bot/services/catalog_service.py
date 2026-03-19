@@ -8,10 +8,9 @@ from bot.database.models import Category, Product
 
 async def get_categories() -> List[Category]:
     async with AsyncSessionLocal() as session:
-        # Пока в магазине нужен только Brawl Stars.
         result = await session.execute(
             select(Category)
-            .where(Category.name == "Brawl Stars")
+            .where(Category.name.in_(["Brawl Stars", "Clash Royale"]))
             .order_by(Category.id)
         )
         return list(result.scalars().all())

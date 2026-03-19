@@ -4,7 +4,6 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.database.models import Product
 from bot.keyboards.inline import (
-    cart_kb,
     categories_kb,
     confirm_order_kb,
     order_payment_kb,
@@ -154,102 +153,12 @@ async def start_order(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("Товар недоступен или отключён.", show_alert=True)
         return
 
-    quantity = 1
-    await state.set_state(OrderStates.choosing_quantity)
     await state.update_data(
         product_id=product.id,
         category_id=category_id,
-        quantity=quantity,
+        quantity=1,
     )
-
-    text = (
-        f"🛒 <b>Мини-корзина</b>\n\n"
-        f"Товар: <b>{product.name}</b>\n"
-        f"Цена за 1 шт: <b>{product.price} ₽</b>\n"
-        f"Количество: <b>{quantity}</b>\n"
-        f"Итого: <b>{product.price * quantity} ₽</b>\n\n"
-    )
-
-    await callback.message.edit_text(
-        text,
-        reply_markup=cart_kb(product.id, quantity),
-    )
-    await callback.answer()
-
-
-@router.callback_query(OrderStates.choosing_quantity, F.data.startswith("cart:"))
-async def handle_cart_actions(callback: CallbackQuery, state: FSMContext) -> None:
-    data = callback.data or ""
-    if data == "cart:none":
-        await callback.answer()
-        return
-
-    state_data = await state.get_data()
-    product_id = state_data.get("product_id")
-    quantity = int(state_data.get("quantity", 1))
-
-    if data == "cart:checkout":
-        await _go_to_supercell_input(callback, state)
-        return
-
-    if data == "cart:cancel":
-        await state.clear()
-        await callback.message.answer(
-            "Оформление заказа отменено.",
-            reply_markup=main_menu_kb(),
-        )
-        await callback.answer()
-        return
-
-    if not product_id:
-        await callback.answer("Ошибка корзины. Попробуйте начать заказ заново.", show_alert=True)
-        await state.clear()
-        return
-
-    try:
-        _, action, prod_id_str = data.split(":", maxsplit=2)
-        cb_product_id = int(prod_id_str)
-    except Exception:
-        await callback.answer("Неверные данные корзины.", show_alert=True)
-        return
-
-    if cb_product_id != product_id:
-        await callback.answer("Данные корзины устарели. Попробуйте снова.", show_alert=True)
-        return
-
-    if action == "inc":
-        if quantity < 99:
-            quantity += 1
-        else:
-            await callback.answer("Максимум 99 штук.", show_alert=True)
-    elif action == "dec":
-        if quantity > 1:
-            quantity -= 1
-        else:
-            await callback.answer("Минимум 1 штука.", show_alert=True)
-
-    product = await catalog_service.get_active_product(product_id)
-    if not product:
-        await callback.answer("Товар недоступен или отключён.", show_alert=True)
-        await state.clear()
-        return
-
-    await state.update_data(quantity=quantity)
-
-    text = (
-        f"🛒 <b>Мини-корзина</b>\n\n"
-        f"Товар: <b>{product.name}</b>\n"
-        f"Цена за 1 шт: <b>{product.price} ₽</b>\n"
-        f"Количество: <b>{quantity}</b>\n"
-        f"Итого: <b>{product.price * quantity} ₽</b>\n\n"
-        f"Вы можете изменить количество перед оформлением."
-    )
-
-    await callback.message.edit_text(
-        text,
-        reply_markup=cart_kb(product.id, quantity),
-    )
-    await callback.answer()
+    await _go_to_supercell_input(callback, state)
 
 
 async def _go_to_supercell_input(callback: CallbackQuery, state: FSMContext) -> None:

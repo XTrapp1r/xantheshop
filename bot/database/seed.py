@@ -76,7 +76,7 @@ async def seed_initial_data() -> None:
                 "Pass Royale",
                 1090,
                 "Сезонный пропуск Clash Royale с наградами.",
-                "https://pally.info/transfer/MvY4neYe71",
+                "https://pally.info/transfer/AmJ1gO1kvO",
             ),
         ]
         for name, price, desc, payment_url in royale_products_spec:
