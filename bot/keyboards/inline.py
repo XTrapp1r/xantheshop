@@ -178,3 +178,20 @@ def order_payment_kb(order_id: int, payment_url: Optional[str] = None) -> Inline
     return builder.as_markup()
 
 
+def payment_confirm_kb(order_id: int) -> InlineKeyboardMarkup:
+    """
+    Подтверждение факта оплаты пользователем.
+    """
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="✅ Да, оплатил",
+        callback_data=f"pay:confirm_yes:{order_id}",
+    )
+    builder.button(
+        text="❌ Нет",
+        callback_data=f"pay:confirm_no:{order_id}",
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+

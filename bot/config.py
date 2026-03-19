@@ -15,6 +15,7 @@ class Config:
     REVIEWS_URL: str
     GUARANTEES_URL: str | None
     PAYMENT_MODE: str
+    PALLY_API_TOKEN: str | None
     DATABASE_URL: str
 
 
@@ -41,6 +42,7 @@ def load_config() -> Config:
     reviews_url = os.getenv("REVIEWS_URL", "https://t.me/xantheshop/7")
     guarantees_url = os.getenv("GUARANTEES_URL") or None
     payment_mode = os.getenv("PAYMENT_MODE", "fake").strip().lower() or "fake"
+    pally_api_token = os.getenv("PALLY_API_TOKEN", "").strip() or None
     database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./shop.db")
 
     return Config(
@@ -50,5 +52,6 @@ def load_config() -> Config:
         REVIEWS_URL=reviews_url,
         GUARANTEES_URL=guarantees_url,
         PAYMENT_MODE=payment_mode,
+        PALLY_API_TOKEN=pally_api_token,
         DATABASE_URL=database_url,
     )

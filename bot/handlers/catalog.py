@@ -285,8 +285,17 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer()
         return
 
-    # создаём платёж (без API, только ссылка и служебные поля)
-    order = await payment_service.create_payment_for_order(order)
+    # создаём счёт в платёжной системе
+    try:
+        order = await payment_service.create_payment_for_order(order)
+    except Exception:
+        await state.clear()
+        await callback.message.answer(
+            "Не удалось создать счёт на оплату. Попробуйте позже.",
+            reply_markup=main_menu_kb(),
+        )
+        await callback.answer()
+        return
 
     await state.clear()
 

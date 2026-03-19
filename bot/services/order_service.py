@@ -184,6 +184,8 @@ async def cancel_order_by_user(
             return None
 
         order.status = OrderStatus.CANCELLED
+        if (order.payment_status or "").lower() != "paid":
+            order.payment_status = "failed"
 
         await session.commit()
         await session.refresh(order)

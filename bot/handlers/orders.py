@@ -3,7 +3,10 @@ from aiogram.types import CallbackQuery, Message
 
 from bot.config import load_config
 from bot.database.models import OrderStatus
-from bot.keyboards.inline import order_payment_kb, user_order_actions_kb
+from bot.keyboards.inline import (
+    admin_order_status_kb,
+    user_order_actions_kb,
+)
 from bot.keyboards.reply import main_menu_kb
 from bot.services import order_service, payment_service
 from bot.utils.text import format_order_line, human_status
@@ -88,19 +91,58 @@ async def check_payment(callback: CallbackQuery) -> None:
         await callback.answer("Заказ не найден.", show_alert=True)
         return
 
-    status = await payment_service.get_payment_status(order.id)
-    if status == "paid":
+    if (order.payment_status or "").lower() == "paid":
         await callback.answer(
             "Оплата уже подтверждена, заказ передан в обработку.",
             show_alert=True,
         )
         return
 
+    payment_id = order.payment_id or ""
+    if not payment_id:
+        await callback.answer("Счёт для оплаты не найден.", show_alert=True)
+        return
+
+    try:
+        is_paid = await payment_service.check_payment(payment_id)
+    except Exception:
+        await callback.answer("Не удалось проверить оплату. Попробуйте позже.", show_alert=True)
+        return
+
+    if not is_paid:
+        await callback.answer("Оплата не найдена.", show_alert=True)
+        return
+
+    order, client = await payment_service.mark_order_paid(order_id)
+    if order is None or client is None:
+        await callback.answer("Не удалось обновить заказ.", show_alert=True)
+        return
+
     await callback.message.answer(
-        "Вы действительно оплатили заказ?",
-        reply_markup=order_payment_kb(order.id),
+        "✅ Оплата подтверждена! Заказ передан в обработку.",
+        reply_markup=main_menu_kb(),
     )
-    await callback.answer()
+
+    admin_text = (
+        "🔥 Новый оплаченный заказ\n\n"
+        f"ID: {order.id}\n"
+        f"Товар: {order.product_name_snapshot}\n"
+        f"Количество: {order.quantity}\n"
+        f"Сумма: {order.total_price} ₽\n"
+        f"Supercell ID: {order.supercell_id}\n"
+        f"Юзер: @{client.username or 'без_username'}"
+    )
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await callback.message.bot.send_message(
+                chat_id=admin_id,
+                text=admin_text,
+                reply_markup=admin_order_status_kb(order.id),
+            )
+        except Exception:
+            continue
+
+    await callback.answer("Оплата подтверждена.")
 
 
 @router.callback_query(F.data.startswith("user:cancel_order:"))
