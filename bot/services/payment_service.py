@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Tuple
 
 import httpx
+import logging
 from sqlalchemy import select
 
 from bot.config import load_config
@@ -9,6 +10,7 @@ from bot.database.db import AsyncSessionLocal
 from bot.database.models import Order, OrderStatus, Product, User
 
 config = load_config()
+logger = logging.getLogger(__name__)
 
 CREATE_BILL_URL = "https://paypalych.com/api/v1/bill/create"
 CHECK_BILL_URL = "https://paypalych.com/api/v1/bill/status"
@@ -44,36 +46,58 @@ async def create_payment(order: Order) -> Order:
         if product is None:
             return db_order
 
-        headers = {
-            "Authorization": f"Bearer {config.PALLY_API_TOKEN}",
-            "Content-Type": "application/json",
-        }
         payload = {
             "amount": db_order.total_price,
             "order_id": str(db_order.id),
             "description": f"Оплата заказа {db_order.id}",
         }
-
+        data = None
+        auth_variants = [
+            f"Bearer {config.PALLY_API_TOKEN}",
+            config.PALLY_API_TOKEN,
+        ]
         async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(CREATE_BILL_URL, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
+            for auth in auth_variants:
+                try:
+                    response = await client.post(
+                        CREATE_BILL_URL,
+                        headers={
+                            "Authorization": auth,
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                    )
+                    if response.status_code >= 400:
+                        logger.warning(
+                            "Paypalych create bill failed: status=%s body=%s",
+                            response.status_code,
+                            response.text[:400],
+                        )
+                        continue
+                    data = response.json()
+                    break
+                except Exception as exc:
+                    logger.warning("Paypalych create bill request error: %s", exc)
+                    continue
 
         bill_id = (
-            data.get("bill_id")
-            or data.get("id")
-            or (data.get("data") or {}).get("bill_id")
-            or (data.get("result") or {}).get("bill_id")
+            (data or {}).get("bill_id")
+            or (data or {}).get("id")
+            or (((data or {}).get("data") or {}).get("bill_id"))
+            or (((data or {}).get("result") or {}).get("bill_id"))
         )
         pay_url = (
-            data.get("pay_url")
-            or data.get("url")
-            or (data.get("data") or {}).get("pay_url")
-            or (data.get("result") or {}).get("pay_url")
+            (data or {}).get("pay_url")
+            or (data or {}).get("url")
+            or (((data or {}).get("data") or {}).get("pay_url"))
+            or (((data or {}).get("result") or {}).get("pay_url"))
             or product.payment_url
         )
+        # Fallback: если API недоступен, оставляем payment_url из товара,
+        # чтобы пользователь всё равно мог оплатить по рабочей ссылке.
         if not bill_id:
-            raise RuntimeError("Paypalych не вернул bill_id")
+            logger.warning("Paypalych не вернул bill_id, используем fallback-ссылку товара")
+            bill_id = f"fallback-{db_order.id}"
 
         db_order.payment_provider = "paypalych"
         db_order.payment_status = "pending"
@@ -92,16 +116,36 @@ async def check_payment(payment_id: str) -> bool:
     if not config.PALLY_API_TOKEN or not payment_id:
         return False
 
-    headers = {
-        "Authorization": f"Bearer {config.PALLY_API_TOKEN}",
-    }
     params = {
         "bill_id": payment_id,
     }
+    auth_variants = [
+        f"Bearer {config.PALLY_API_TOKEN}",
+        config.PALLY_API_TOKEN,
+    ]
     async with httpx.AsyncClient(timeout=20.0) as client:
-        response = await client.get(CHECK_BILL_URL, headers=headers, params=params)
-        response.raise_for_status()
-        data = response.json()
+        data = None
+        for auth in auth_variants:
+            try:
+                response = await client.get(
+                    CHECK_BILL_URL,
+                    headers={"Authorization": auth},
+                    params=params,
+                )
+                if response.status_code >= 400:
+                    logger.warning(
+                        "Paypalych check bill failed: status=%s body=%s",
+                        response.status_code,
+                        response.text[:400],
+                    )
+                    continue
+                data = response.json()
+                break
+            except Exception as exc:
+                logger.warning("Paypalych check bill request error: %s", exc)
+                continue
+    if data is None:
+        return False
 
     status = (
         data.get("status")
