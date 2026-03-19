@@ -303,9 +303,12 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext) -> None:
 
     text = (
         "✅ Ваш заказ создан\n\n"
-        "💸 Оплатите по ссылке ниже (кнопка «Оплатить»).\n"
-        "После оплаты нажмите:\n"
-        "🔄 Проверить оплату"
+        f"Номер заказа: <b>#{order.id}</b>\n"
+        f"Товар: <b>{order.product_name_snapshot}</b>\n"
+        f"Количество: <b>{order.quantity}</b>\n"
+        f"Сумма: <b>{order.total_price} ₽</b>\n\n"
+        "💸 Для оплаты нажмите кнопку ниже.\n\n"
+        "После успешной оплаты статус заказа обновится автоматически."
     )
 
     await callback.message.answer(

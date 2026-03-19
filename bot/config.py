@@ -16,6 +16,8 @@ class Config:
     GUARANTEES_URL: str | None
     PAYMENT_MODE: str
     PALLY_API_TOKEN: str | None
+    PALLY_SHOP_ID: str | None
+    PUBLIC_BASE_URL: str | None
     DATABASE_URL: str
 
 
@@ -43,6 +45,8 @@ def load_config() -> Config:
     guarantees_url = os.getenv("GUARANTEES_URL") or None
     payment_mode = os.getenv("PAYMENT_MODE", "fake").strip().lower() or "fake"
     pally_api_token = os.getenv("PALLY_API_TOKEN", "").strip() or None
+    pally_shop_id = os.getenv("PALLY_SHOP_ID", "").strip() or None
+    public_base_url = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/") or None
     database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./shop.db")
 
     return Config(
@@ -53,5 +57,7 @@ def load_config() -> Config:
         GUARANTEES_URL=guarantees_url,
         PAYMENT_MODE=payment_mode,
         PALLY_API_TOKEN=pally_api_token,
+        PALLY_SHOP_ID=pally_shop_id,
+        PUBLIC_BASE_URL=public_base_url,
         DATABASE_URL=database_url,
     )

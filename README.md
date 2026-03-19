@@ -45,6 +45,9 @@
    - `ADMIN_IDS` — список Telegram ID админов через запятую
    - `SUPPORT_USERNAME` — юзернейм саппорта
    - `REVIEWS_URL` — ссылка на отзывы (можно-заглушку)
+   - `PALLY_API_TOKEN` — API токен PayPalych
+   - `PALLY_SHOP_ID` — ID магазина PayPalych
+   - `PUBLIC_BASE_URL` — публичный URL вашего сервера (например `https://example.com`)
    - `DATABASE_URL` — по умолчанию `sqlite+aiosqlite:///./shop.db`
 
 5. Запустите бота:
@@ -60,6 +63,14 @@
    ```
 
 При первом запуске БД автоматически создастся и заполнится тестовыми категориями и товарами.
+
+### PayPalych Result URL
+
+Для postback оплаты в кабинете PayPalych укажите:
+
+`{PUBLIC_BASE_URL}/webhooks/paypalych/result`
+
+Именно этот endpoint является источником истины для подтверждения оплаты.
 
 ### Запуск через Docker
 

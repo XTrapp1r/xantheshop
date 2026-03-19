@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+import uvicorn
 from aiogram import Bot, Dispatcher
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -10,6 +11,7 @@ from bot.database.db import init_db
 from bot.database.seed import seed_initial_data
 from bot.handlers import admin, catalog, info, orders, start
 from bot.services import payment_service
+from bot.webhooks import build_webhook_app
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,6 +46,23 @@ async def main() -> None:
             await asyncio.sleep(300)
 
     asyncio.create_task(_auto_cancel_loop())
+
+    webhook_app = build_webhook_app(bot)
+    webhook_config = uvicorn.Config(
+        app=webhook_app,
+        host="0.0.0.0",
+        port=8080,
+        log_level="warning",
+        loop="asyncio",
+    )
+    webhook_server = uvicorn.Server(webhook_config)
+    asyncio.create_task(webhook_server.serve())
+
+    result_url = payment_service.get_result_url()
+    if result_url:
+        logging.info("PayPalych Result URL: %s", result_url)
+    else:
+        logging.warning("PUBLIC_BASE_URL не задан: укажите его для Result URL PayPalych")
 
     logging.info("Бот запущен. Ожидание обновлений...")
     await dp.start_polling(bot)

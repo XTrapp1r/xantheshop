@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
-from typing import Tuple
+import logging
 
 import httpx
-import logging
+from aiogram import Bot
 from sqlalchemy import select
 
 from bot.config import load_config
@@ -12,8 +12,7 @@ from bot.database.models import Order, OrderStatus, Product, User
 config = load_config()
 logger = logging.getLogger(__name__)
 
-CREATE_BILL_URL = "https://paypalych.com/api/v1/bill/create"
-CHECK_BILL_URL = "https://paypalych.com/api/v1/bill/status"
+CREATE_BILL_URL = "https://pal24.pro/api/v1/bill/create"
 
 
 async def create_payment_for_order(order: Order) -> Order:
@@ -25,10 +24,12 @@ async def create_payment_for_order(order: Order) -> Order:
 
 async def create_payment(order: Order) -> Order:
     """
-    Создаёт счёт в Paypalych и сохраняет bill_id/pay_url в заказ.
+    Создаёт уникальный bill в PayPalych для заказа.
     """
     if not config.PALLY_API_TOKEN:
         raise RuntimeError("PALLY_API_TOKEN не указан в переменных окружения")
+    if not config.PALLY_SHOP_ID:
+        raise RuntimeError("PALLY_SHOP_ID не указан в переменных окружения")
 
     async with AsyncSessionLocal() as session:
         res = await session.execute(select(Order).where(Order.id == order.id))
@@ -49,55 +50,56 @@ async def create_payment(order: Order) -> Order:
         payload = {
             "amount": db_order.total_price,
             "order_id": str(db_order.id),
-            "description": f"Оплата заказа {db_order.id}",
+            "description": f"Оплата заказа #{db_order.id}",
+            "type": "normal",
+            "shop_id": config.PALLY_SHOP_ID,
+            "currency_in": "RUB",
+            "custom": f"order:{db_order.id}",
+            "payer_pays_commission": 1,
+            "name": db_order.product_name_snapshot,
         }
+
         data = None
-        auth_variants = [
-            f"Bearer {config.PALLY_API_TOKEN}",
-            config.PALLY_API_TOKEN,
-        ]
         async with httpx.AsyncClient(timeout=20.0) as client:
-            for auth in auth_variants:
-                try:
-                    response = await client.post(
-                        CREATE_BILL_URL,
-                        headers={
-                            "Authorization": auth,
-                            "Content-Type": "application/json",
-                        },
-                        json=payload,
-                    )
-                    if response.status_code >= 400:
-                        logger.warning(
-                            "Paypalych create bill failed: status=%s body=%s",
-                            response.status_code,
-                            response.text[:400],
-                        )
-                        continue
-                    data = response.json()
-                    break
-                except Exception as exc:
-                    logger.warning("Paypalych create bill request error: %s", exc)
-                    continue
+            response = await client.post(
+                CREATE_BILL_URL,
+                headers={"Authorization": f"Bearer {config.PALLY_API_TOKEN}"},
+                data=payload,  # form-data/x-www-form-urlencoded
+            )
+            if response.status_code >= 400:
+                logger.error(
+                    "PayPalych create bill failed: status=%s body=%s",
+                    response.status_code,
+                    response.text[:500],
+                )
+                raise RuntimeError("PayPalych вернул ошибку при создании счёта")
+            data = response.json()
+
+        success = bool(
+            data.get("success")
+            or (data.get("data") or {}).get("success")
+            or (data.get("result") or {}).get("success")
+        )
+        if not success:
+            logger.error("PayPalych create bill unsuccessful response: %s", data)
+            raise RuntimeError("Не удалось создать счёт в PayPalych")
 
         bill_id = (
-            (data or {}).get("bill_id")
-            or (data or {}).get("id")
-            or (((data or {}).get("data") or {}).get("bill_id"))
-            or (((data or {}).get("result") or {}).get("bill_id"))
+            data.get("bill_id")
+            or data.get("id")
+            or (data.get("data") or {}).get("bill_id")
+            or (data.get("result") or {}).get("bill_id")
         )
         pay_url = (
-            (data or {}).get("pay_url")
-            or (data or {}).get("url")
-            or (((data or {}).get("data") or {}).get("pay_url"))
-            or (((data or {}).get("result") or {}).get("pay_url"))
-            or product.payment_url
+            data.get("link_page_url")
+            or data.get("pay_url")
+            or data.get("url")
+            or (data.get("data") or {}).get("link_page_url")
+            or (data.get("result") or {}).get("link_page_url")
         )
-        # Fallback: если API недоступен, оставляем payment_url из товара,
-        # чтобы пользователь всё равно мог оплатить по рабочей ссылке.
-        if not bill_id:
-            logger.warning("Paypalych не вернул bill_id, используем fallback-ссылку товара")
-            bill_id = f"fallback-{db_order.id}"
+        if not bill_id or not pay_url:
+            logger.error("PayPalych response missing bill_id or link_page_url: %s", data)
+            raise RuntimeError("PayPalych не вернул bill_id/link_page_url")
 
         db_order.payment_provider = "paypalych"
         db_order.payment_status = "pending"
@@ -109,56 +111,9 @@ async def create_payment(order: Order) -> Order:
         return db_order
 
 
-async def check_payment(payment_id: str) -> bool:
-    """
-    Проверяет статус счёта в Paypalych.
-    """
-    if not config.PALLY_API_TOKEN or not payment_id:
-        return False
-
-    params = {
-        "bill_id": payment_id,
-    }
-    auth_variants = [
-        f"Bearer {config.PALLY_API_TOKEN}",
-        config.PALLY_API_TOKEN,
-    ]
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        data = None
-        for auth in auth_variants:
-            try:
-                response = await client.get(
-                    CHECK_BILL_URL,
-                    headers={"Authorization": auth},
-                    params=params,
-                )
-                if response.status_code >= 400:
-                    logger.warning(
-                        "Paypalych check bill failed: status=%s body=%s",
-                        response.status_code,
-                        response.text[:400],
-                    )
-                    continue
-                data = response.json()
-                break
-            except Exception as exc:
-                logger.warning("Paypalych check bill request error: %s", exc)
-                continue
-    if data is None:
-        return False
-
-    status = (
-        data.get("status")
-        or (data.get("data") or {}).get("status")
-        or (data.get("result") or {}).get("status")
-        or ""
-    )
-    return str(status).lower() == "paid"
-
-
 async def get_payment_status(order_id: int) -> str:
     """
-    Возвращает статус оплаты заказа.
+    Возвращает текущий status оплаты из БД.
     """
     async with AsyncSessionLocal() as session:
         res = await session.execute(select(Order).where(Order.id == order_id))
@@ -168,14 +123,31 @@ async def get_payment_status(order_id: int) -> str:
         return db_order.payment_status or "pending"
 
 
-async def confirm_manual_payment(order_id: int) -> Tuple[Order | None, User | None]:
-    """
-    Ручное подтверждение оплаты пользователем.
+def get_result_url() -> str | None:
+    if not config.PUBLIC_BASE_URL:
+        return None
+    return f"{config.PUBLIC_BASE_URL}/webhooks/paypalych/result"
 
-    Меняет:
-    - payment_status -> "paid"
-    - order.status -> OrderStatus.PAID
+
+async def process_paypalych_postback(payload: dict, bot: Bot) -> str:
     """
+    Обрабатывает postback от PayPalych. Идемпотентно.
+    """
+    status = str(payload.get("Status", "")).upper()
+    inv_id_raw = str(payload.get("InvId", "")).strip()
+    trs_id = str(payload.get("TrsId", "")).strip() or None
+    custom = str(payload.get("custom", "")).strip()
+
+    order_id: int | None = None
+    if inv_id_raw.isdigit():
+        order_id = int(inv_id_raw)
+    elif custom.startswith("order:") and custom.split(":", 1)[1].isdigit():
+        order_id = int(custom.split(":", 1)[1])
+
+    if order_id is None:
+        logger.warning("PayPalych postback: invalid order id payload=%s", payload)
+        return "ok"
+
     async with AsyncSessionLocal() as session:
         res = await session.execute(
             select(Order, User)
@@ -184,45 +156,69 @@ async def confirm_manual_payment(order_id: int) -> Tuple[Order | None, User | No
         )
         row = res.one_or_none()
         if row is None:
-            return None, None
-
-        order, user = row
-
-        if order.payment_status == "paid":
-            return order, user
-
-        order.payment_status = "paid"
-        order.status = OrderStatus.PAID
-
-        await session.commit()
-        await session.refresh(order)
-
-        return order, user
-
-
-async def mark_order_paid(order_id: int) -> Tuple[Order | None, User | None]:
-    """
-    Помечает заказ как оплаченный.
-    """
-    async with AsyncSessionLocal() as session:
-        res = await session.execute(
-            select(Order, User)
-            .join(User, Order.user_id == User.id)
-            .where(Order.id == order_id)
-        )
-        row = res.one_or_none()
-        if row is None:
-            return None, None
+            logger.warning("PayPalych postback: order not found order_id=%s", order_id)
+            return "ok"
 
         order, user = row
         if order.payment_status == "paid":
-            return order, user
+            # Повторный postback: не дублируем бизнес-логику/уведомления.
+            return "ok"
 
-        order.payment_status = "paid"
-        order.status = OrderStatus.PAID
-        await session.commit()
-        await session.refresh(order)
-        return order, user
+        if status == "SUCCESS":
+            order.payment_status = "paid"
+            order.status = OrderStatus.PAID
+            if trs_id:
+                order.payment_id = trs_id
+            await session.commit()
+            await session.refresh(order)
+
+            try:
+                await bot.send_message(
+                    chat_id=user.telegram_id,
+                    text="✅ Оплата получена. Ваш заказ передан в обработку.",
+                )
+            except Exception:
+                logger.exception("Не удалось отправить уведомление пользователю order_id=%s", order.id)
+
+            from bot.keyboards.inline import admin_order_status_kb
+
+            admin_text = (
+                "🔥 Новый оплаченный заказ\n\n"
+                f"ID: {order.id}\n"
+                f"Товар: {order.product_name_snapshot}\n"
+                f"Количество: {order.quantity}\n"
+                f"Сумма: {order.total_price} ₽\n"
+                f"Supercell ID: {order.supercell_id}\n"
+                f"Юзер: @{user.username or 'без_username'} / Telegram ID: {user.telegram_id}\n\n"
+                "Статус: Ожидает выполнения"
+            )
+            for admin_id in config.ADMIN_IDS:
+                try:
+                    await bot.send_message(
+                        chat_id=admin_id,
+                        text=admin_text,
+                        reply_markup=admin_order_status_kb(order.id),
+                    )
+                except Exception:
+                    logger.exception("Не удалось отправить уведомление админу admin_id=%s", admin_id)
+            return "ok"
+
+        if status == "FAIL":
+            order.payment_status = "failed"
+            order.status = OrderStatus.CANCELLED
+            await session.commit()
+            await session.refresh(order)
+            try:
+                await bot.send_message(
+                    chat_id=user.telegram_id,
+                    text="❌ Оплата не прошла. Попробуйте снова или оформите новый заказ.",
+                )
+            except Exception:
+                logger.exception("Не удалось отправить FAIL уведомление пользователю order_id=%s", order.id)
+            return "ok"
+
+        logger.info("PayPalych postback ignored: status=%s payload=%s", status, payload)
+        return "ok"
 
 
 async def auto_cancel_expired_unpaid_orders() -> int:
@@ -245,7 +241,7 @@ async def auto_cancel_expired_unpaid_orders() -> int:
             if created is None:
                 continue
             created_utc = created if created.tzinfo else created.replace(tzinfo=timezone.utc)
-            if created_utc < threshold and (order.payment_status or "pending") != "paid":
+            if created_utc < threshold and (order.payment_status or "pending") == "pending":
                 order.status = OrderStatus.CANCELLED
                 order.payment_status = "failed"
                 updated += 1
