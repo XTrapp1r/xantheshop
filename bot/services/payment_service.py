@@ -161,7 +161,7 @@ async def process_paypalych_postback(payload: dict, bot: Bot) -> str:
 
         order, user = row
         if order.payment_status == "paid":
-            # Повторный postback: не дублируем бизнес-логику/уведомления.
+            # Повторный postback SUCCESS/FAIL: не меняем статус и не шлём уведомления снова.
             return "ok"
 
         if status == "SUCCESS":
@@ -204,6 +204,9 @@ async def process_paypalych_postback(payload: dict, bot: Bot) -> str:
             return "ok"
 
         if status == "FAIL":
+            # Повторный FAIL: не дублируем уведомления.
+            if order.payment_status == "failed" and order.status == OrderStatus.CANCELLED:
+                return "ok"
             order.payment_status = "failed"
             order.status = OrderStatus.CANCELLED
             await session.commit()

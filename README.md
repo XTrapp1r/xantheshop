@@ -70,7 +70,15 @@
 
 `{PUBLIC_BASE_URL}/webhooks/paypalych/result`
 
-Именно этот endpoint является источником истины для подтверждения оплаты.
+Пример для продакшена: `https://xantheshop.ru/webhooks/paypalych/result`
+
+В `.env` задайте `PUBLIC_BASE_URL=https://xantheshop.ru` (без слэша на конце).
+
+Именно этот endpoint является источником истины для подтверждения оплаты. Подтверждение кнопкой в боте не используется.
+
+**Nginx (пример):** проксируйте `location /webhooks/` на контейнер `http://127.0.0.1:8080/webhooks/` или поднимайте сервис с пробросом порта `8080:8080` из `docker-compose.yml`.
+
+Проверка живости HTTP: `GET http://<хост>:8080/health`
 
 ### Запуск через Docker
 

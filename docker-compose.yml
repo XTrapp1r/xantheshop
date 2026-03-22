@@ -6,6 +6,9 @@ services:
     environment:
       # Абсолютный путь к БД в volume (4 слэша: scheme + "//" + "/data/...")
       DATABASE_URL: sqlite+aiosqlite:////data/shop.db
+    ports:
+      # PayPalych Result URL: {PUBLIC_BASE_URL}/webhooks/paypalych/result → прокси на этот порт
+      - "8080:8080"
     volumes:
       - botdata:/data
     restart: unless-stopped

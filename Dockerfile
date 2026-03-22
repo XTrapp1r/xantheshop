@@ -13,5 +13,8 @@ COPY .env.example .env.example
 # БД по умолчанию в /data (в compose монтируем volume)
 ENV DATABASE_URL=sqlite+aiosqlite:///data/shop.db
 
+# HTTP webhook PayPalych (uvicorn внутри bot.main)
+EXPOSE 8080
+
 # Запуск из корня проекта: python -m bot.main
 CMD ["python", "-m", "bot.main"]
