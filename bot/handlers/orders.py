@@ -7,6 +7,7 @@ from bot.keyboards.inline import (
 )
 from bot.keyboards.reply import main_menu_kb
 from bot.services import order_service
+from bot.services.payment_service import sync_order_payment_from_paypalych_api
 from bot.utils.text import format_order_line, human_status
 
 router = Router()
@@ -95,7 +96,30 @@ async def check_payment(callback: CallbackQuery) -> None:
     if payment_status == "failed":
         await callback.answer("Статус оплаты: Неуспешно/отменён.", show_alert=True)
         return
-    await callback.answer("Статус оплаты: Ожидает оплату.", show_alert=True)
+
+    sync_result = await sync_order_payment_from_paypalych_api(order_id, callback.bot)
+    if sync_result == "updated":
+        if callback.message:
+            await callback.message.edit_text(
+                f"Заказ №{order_id}\n"
+                f"{order.product_name_snapshot} | {order.quantity} шт. | {order.total_price} ₽\n"
+                f"Статус: {human_status(OrderStatus.PAID)}",
+            )
+        await callback.answer("Оплата подтверждена, статус обновлён.", show_alert=True)
+        return
+    if sync_result == "already_paid":
+        await callback.answer("Статус оплаты: Оплачен.", show_alert=True)
+        return
+    if sync_result == "error":
+        await callback.answer(
+            "Не удалось проверить оплату. Попробуйте позже или напишите в поддержку.",
+            show_alert=True,
+        )
+        return
+    await callback.answer(
+        "Оплата в PayPalych ещё не отмечена. Подождите минуту и нажмите снова.",
+        show_alert=True,
+    )
 
 
 @router.callback_query(F.data.startswith("user:cancel_order:"))

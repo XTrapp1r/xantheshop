@@ -13,6 +13,7 @@ config = load_config()
 logger = logging.getLogger(__name__)
 
 CREATE_BILL_URL = "https://pal24.pro/api/v1/bill/create"
+CHECK_BILL_URL = "https://pal24.pro/api/v1/bill/status"
 
 
 async def create_payment_for_order(order: Order) -> Order:
@@ -104,13 +105,9 @@ async def create_payment(order: Order) -> Order:
         db_order.payment_provider = "paypalych"
         db_order.payment_status = "pending"
         db_order.payment_id = str(bill_id)
-        # В кнопке «Оплатить» показываем ссылку из каталога (pally.info и т.д.),
-        # а не link_page_url от API — иначе сиды на товар не влияют на то, что видит пользователь.
-        db_order.payment_url = (
-            product.payment_url.strip()
-            if (product.payment_url or "").strip()
-            else str(pay_url)
-        )
+        # Только ссылка со счёта PayPalych: оплата должна идти по этому bill,
+        # иначе webhook по InvId не привяжется к оплате (статические pally.info в каталоге — другой поток).
+        db_order.payment_url = str(pay_url)
 
         await session.commit()
         await session.refresh(db_order)
@@ -133,6 +130,145 @@ def get_result_url() -> str | None:
     if not config.PUBLIC_BASE_URL:
         return None
     return f"{config.PUBLIC_BASE_URL}/webhooks/paypalych/result"
+
+
+async def notify_order_paid_and_admins(order: Order, user: User, bot: Bot) -> None:
+    """Уведомления после подтверждённой оплаты (webhook или sync API)."""
+    try:
+        await bot.send_message(
+            chat_id=user.telegram_id,
+            text="✅ Оплата получена. Ваш заказ передан в обработку.",
+        )
+    except Exception:
+        logger.exception("Не удалось отправить уведомление пользователю order_id=%s", order.id)
+
+    from bot.keyboards.inline import admin_order_status_kb
+
+    admin_text = (
+        "🔥 Новый оплаченный заказ\n\n"
+        f"ID: {order.id}\n"
+        f"Товар: {order.product_name_snapshot}\n"
+        f"Количество: {order.quantity}\n"
+        f"Сумма: {order.total_price} ₽\n"
+        f"Supercell ID: {order.supercell_id}\n"
+        f"Юзер: @{user.username or 'без_username'} / Telegram ID: {user.telegram_id}\n\n"
+        "Статус: Ожидает выполнения"
+    )
+    for admin_id in config.ADMIN_IDS:
+        try:
+            await bot.send_message(
+                chat_id=admin_id,
+                text=admin_text,
+                reply_markup=admin_order_status_kb(order.id),
+            )
+        except Exception:
+            logger.exception("Не удалось отправить уведомление админу admin_id=%s", admin_id)
+
+
+async def finalize_order_as_paid(
+    order_id: int,
+    bot: Bot,
+    *,
+    trs_id: str | None = None,
+) -> bool:
+    """
+    Переводит заказ в paid/PAID и шлёт уведомления. Идемпотентно.
+    Возвращает True, если статус был обновлён сейчас.
+    """
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(
+            select(Order, User)
+            .join(User, Order.user_id == User.id)
+            .where(Order.id == order_id)
+        )
+        row = res.one_or_none()
+        if row is None:
+            return False
+        order, user = row
+        if order.payment_status == "paid":
+            return False
+        order.payment_status = "paid"
+        order.status = OrderStatus.PAID
+        if trs_id:
+            order.payment_id = trs_id
+        await session.commit()
+        await session.refresh(order)
+    await notify_order_paid_and_admins(order, user, bot)
+    return True
+
+
+def _bill_payload_is_paid(data: dict) -> bool:
+    raw = (
+        data.get("status")
+        or (data.get("data") or {}).get("status")
+        or (data.get("result") or {}).get("status")
+        or data.get("bill_status")
+        or ""
+    )
+    s = str(raw).lower()
+    if s in ("paid", "success", "completed", "ok"):
+        return True
+    return "paid" in s or "success" in s
+
+
+async def sync_order_payment_from_paypalych_api(order_id: int, bot: Bot) -> str:
+    """
+    Подтягивает статус счёта из PayPalych API (если webhook не дошёл).
+    Возвращает: already_paid | updated | pending | error | not_found
+    """
+    if not config.PALLY_API_TOKEN:
+        return "error"
+
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(
+            select(Order, User)
+            .join(User, Order.user_id == User.id)
+            .where(Order.id == order_id)
+        )
+        row = res.one_or_none()
+        if row is None:
+            return "not_found"
+        order, _user = row
+        if order.payment_status == "paid":
+            return "already_paid"
+        if (order.payment_status or "") == "failed":
+            return "pending"
+        if order.payment_provider != "paypalych" or not order.payment_id:
+            return "pending"
+
+        bill_id = str(order.payment_id).strip()
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.get(
+                CHECK_BILL_URL,
+                headers={"Authorization": f"Bearer {config.PALLY_API_TOKEN}"},
+                params={"bill_id": bill_id},
+            )
+            if response.status_code >= 400:
+                logger.warning(
+                    "PayPalych bill/status HTTP %s: %s",
+                    response.status_code,
+                    response.text[:400],
+                )
+                return "error"
+            data = response.json()
+    except Exception:
+        logger.exception("PayPalych bill/status request failed order_id=%s", order_id)
+        return "error"
+
+    if not _bill_payload_is_paid(data):
+        return "pending"
+
+    trs_id = None
+    for key in ("TrsId", "trs_id", "transaction_id"):
+        v = data.get(key) or (data.get("data") or {}).get(key)
+        if v:
+            trs_id = str(v).strip()
+            break
+
+    updated = await finalize_order_as_paid(order_id, bot, trs_id=trs_id)
+    return "updated" if updated else "already_paid"
 
 
 async def process_paypalych_postback(payload: dict, bot: Bot) -> str:
@@ -171,42 +307,7 @@ async def process_paypalych_postback(payload: dict, bot: Bot) -> str:
             return "ok"
 
         if status == "SUCCESS":
-            order.payment_status = "paid"
-            order.status = OrderStatus.PAID
-            if trs_id:
-                order.payment_id = trs_id
-            await session.commit()
-            await session.refresh(order)
-
-            try:
-                await bot.send_message(
-                    chat_id=user.telegram_id,
-                    text="✅ Оплата получена. Ваш заказ передан в обработку.",
-                )
-            except Exception:
-                logger.exception("Не удалось отправить уведомление пользователю order_id=%s", order.id)
-
-            from bot.keyboards.inline import admin_order_status_kb
-
-            admin_text = (
-                "🔥 Новый оплаченный заказ\n\n"
-                f"ID: {order.id}\n"
-                f"Товар: {order.product_name_snapshot}\n"
-                f"Количество: {order.quantity}\n"
-                f"Сумма: {order.total_price} ₽\n"
-                f"Supercell ID: {order.supercell_id}\n"
-                f"Юзер: @{user.username or 'без_username'} / Telegram ID: {user.telegram_id}\n\n"
-                "Статус: Ожидает выполнения"
-            )
-            for admin_id in config.ADMIN_IDS:
-                try:
-                    await bot.send_message(
-                        chat_id=admin_id,
-                        text=admin_text,
-                        reply_markup=admin_order_status_kb(order.id),
-                    )
-                except Exception:
-                    logger.exception("Не удалось отправить уведомление админу admin_id=%s", admin_id)
+            await finalize_order_as_paid(order.id, bot, trs_id=trs_id)
             return "ok"
 
         if status == "FAIL":
