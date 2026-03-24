@@ -104,7 +104,13 @@ async def create_payment(order: Order) -> Order:
         db_order.payment_provider = "paypalych"
         db_order.payment_status = "pending"
         db_order.payment_id = str(bill_id)
-        db_order.payment_url = str(pay_url)
+        # В кнопке «Оплатить» показываем ссылку из каталога (pally.info и т.д.),
+        # а не link_page_url от API — иначе сиды на товар не влияют на то, что видит пользователь.
+        db_order.payment_url = (
+            product.payment_url.strip()
+            if (product.payment_url or "").strip()
+            else str(pay_url)
+        )
 
         await session.commit()
         await session.refresh(db_order)
