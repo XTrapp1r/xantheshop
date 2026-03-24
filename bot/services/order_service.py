@@ -158,13 +158,32 @@ async def update_order_status(
         return order, user
 
 
+async def get_order_by_id(order_id: int) -> Order | None:
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(Order).where(Order.id == order_id))
+        return res.scalar_one_or_none()
+
+
+async def set_order_payment_telegram_message_id(
+    order_id: int,
+    telegram_message_id: int,
+) -> None:
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(Order).where(Order.id == order_id))
+        order = res.scalar_one_or_none()
+        if order is None:
+            return
+        order.payment_telegram_message_id = telegram_message_id
+        await session.commit()
+
+
 async def cancel_order_by_user(
     order_id: int,
     telegram_id: int,
 ) -> Order | None:
     """
     Отмена заказа самим пользователем.
-    Разрешаем отмену только для статусов NEW и IN_PROGRESS.
+    Оплаченный заказ отменить нельзя (ни на экране оплаты, ни из «Мои заказы»).
     """
     async with AsyncSessionLocal() as session:
         res = await session.execute(
@@ -180,12 +199,13 @@ async def cancel_order_by_user(
             return None
 
         order, _user = row
+        if (order.payment_status or "").lower() == "paid":
+            return None
         if order.status not in (OrderStatus.NEW, OrderStatus.IN_PROGRESS):
             return None
 
         order.status = OrderStatus.CANCELLED
-        if (order.payment_status or "").lower() != "paid":
-            order.payment_status = "failed"
+        order.payment_status = "failed"
 
         await session.commit()
         await session.refresh(order)

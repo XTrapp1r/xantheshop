@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy import text
 from sqlalchemy.orm import declarative_base
 
 load_dotenv()
@@ -35,4 +36,14 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "ALTER TABLE orders ADD COLUMN payment_telegram_message_id INTEGER"
+                )
+            )
+    except Exception:
+        pass
 

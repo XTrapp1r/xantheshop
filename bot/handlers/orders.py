@@ -7,7 +7,10 @@ from bot.keyboards.inline import (
 )
 from bot.keyboards.reply import main_menu_kb
 from bot.services import order_service
-from bot.services.payment_service import sync_order_payment_from_paypalych_api
+from bot.services.payment_service import (
+    apply_paid_order_payment_ui,
+    sync_order_payment_from_paypalych_api,
+)
 from bot.utils.text import format_order_line, human_status
 
 router = Router()
@@ -58,12 +61,15 @@ async def my_orders(message: Message) -> None:
     for o in orders:
         if o.status not in (OrderStatus.NEW, OrderStatus.IN_PROGRESS):
             continue
-        await message.answer(
+        line = (
             f"Заказ №{o.id}\n"
             f"{o.product_name_snapshot} | {o.quantity} шт. | {o.total_price} ₽\n"
-            f"Статус: {human_status(o.status)}",
-            reply_markup=user_order_actions_kb(o.id),
+            f"Статус: {human_status(o.status)}"
         )
+        if (o.payment_status or "").lower() == "paid":
+            await message.answer(line)
+        else:
+            await message.answer(line, reply_markup=user_order_actions_kb(o.id))
 
 
 @router.callback_query(F.data.startswith("pay:check:"))
@@ -91,6 +97,14 @@ async def check_payment(callback: CallbackQuery) -> None:
 
     payment_status = (order.payment_status or "pending").lower()
     if payment_status == "paid":
+        db_order = await order_service.get_order_by_id(order_id)
+        if db_order:
+            await apply_paid_order_payment_ui(
+                callback.bot,
+                db_order,
+                chat_id=user.telegram_id,
+                send_payment_received_line=False,
+            )
         await callback.answer("Статус оплаты: Оплачен.", show_alert=True)
         return
     if payment_status == "failed":
@@ -99,12 +113,6 @@ async def check_payment(callback: CallbackQuery) -> None:
 
     sync_result = await sync_order_payment_from_paypalych_api(order_id, callback.bot)
     if sync_result == "updated":
-        if callback.message:
-            await callback.message.edit_text(
-                f"Заказ №{order_id}\n"
-                f"{order.product_name_snapshot} | {order.quantity} шт. | {order.total_price} ₽\n"
-                f"Статус: {human_status(OrderStatus.PAID)}",
-            )
         await callback.answer("Оплата подтверждена, статус обновлён.", show_alert=True)
         return
     if sync_result == "already_paid":

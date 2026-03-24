@@ -132,15 +132,69 @@ def get_result_url() -> str | None:
     return f"{config.PUBLIC_BASE_URL}/webhooks/paypalych/result"
 
 
+def format_order_payment_screen_paid_html(order: Order) -> str:
+    """Текст сообщения со счётом после оплаты (без кнопок оплаты/отмены)."""
+    return (
+        "✅ Ваш заказ создан\n\n"
+        f"Номер заказа: <b>#{order.id}</b>\n"
+        f"Товар: <b>{order.product_name_snapshot}</b>\n"
+        f"Количество: <b>{order.quantity}</b>\n"
+        f"Сумма: <b>{order.total_price} ₽</b>\n\n"
+        "<b>✅ Оплачено</b>"
+    )
+
+
+async def apply_paid_order_payment_ui(
+    bot: Bot,
+    order: Order,
+    *,
+    chat_id: int,
+    send_payment_received_line: bool = True,
+) -> None:
+    """
+    Убирает inline-кнопки с карточки оплаты и показывает главное меню внизу.
+    """
+    from bot.keyboards.reply import main_menu_kb
+
+    if order.payment_telegram_message_id:
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=order.payment_telegram_message_id,
+                text=format_order_payment_screen_paid_html(order),
+                parse_mode="HTML",
+                reply_markup=None,
+            )
+        except Exception:
+            logger.exception(
+                "Не удалось обновить сообщение оплаты order_id=%s", order.id
+            )
+
+    try:
+        if send_payment_received_line:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="✅ Оплата получена. Ваш заказ передан в обработку.",
+                reply_markup=main_menu_kb(),
+            )
+        elif not order.payment_telegram_message_id:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="✅ Оплата уже подтверждена.",
+                reply_markup=main_menu_kb(),
+            )
+    except Exception:
+        logger.exception("Не удалось отправить главное меню order_id=%s", order.id)
+
+
 async def notify_order_paid_and_admins(order: Order, user: User, bot: Bot) -> None:
     """Уведомления после подтверждённой оплаты (webhook или sync API)."""
-    try:
-        await bot.send_message(
-            chat_id=user.telegram_id,
-            text="✅ Оплата получена. Ваш заказ передан в обработку.",
-        )
-    except Exception:
-        logger.exception("Не удалось отправить уведомление пользователю order_id=%s", order.id)
+    await apply_paid_order_payment_ui(
+        bot,
+        order,
+        chat_id=user.telegram_id,
+        send_payment_received_line=True,
+    )
 
     from bot.keyboards.inline import admin_order_status_kb
 

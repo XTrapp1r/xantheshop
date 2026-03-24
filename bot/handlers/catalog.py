@@ -1,6 +1,6 @@
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from bot.database.models import Product
 from bot.keyboards.inline import (
@@ -232,9 +232,16 @@ async def process_supercell_id(message: Message, state: FSMContext) -> None:
         "Если что-то не так — можно отменить и оформить заново."
     )
 
+    hide = await message.answer("\u200b", reply_markup=ReplyKeyboardRemove())
+    try:
+        await message.bot.delete_message(message.chat.id, hide.message_id)
+    except Exception:
+        pass
+
     await message.answer(
         text,
         reply_markup=confirm_order_kb(),
+        parse_mode="HTML",
     )
 
 
@@ -311,10 +318,20 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext) -> None:
         "После успешной оплаты статус заказа обновится автоматически."
     )
 
-    await callback.message.answer(
+    msg = await callback.message.answer(
         text,
         reply_markup=order_payment_kb(order.id, payment_link),
+        parse_mode="HTML",
     )
+    await order_service.set_order_payment_telegram_message_id(order.id, msg.message_id)
+
+    hide = await callback.message.answer("\u200b", reply_markup=ReplyKeyboardRemove())
+    try:
+        await callback.message.bot.delete_message(
+            callback.message.chat.id, hide.message_id
+        )
+    except Exception:
+        pass
 
     await callback.answer("Заказ успешно создан, ожидает оплаты.")
 
