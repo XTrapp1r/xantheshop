@@ -102,4 +102,18 @@ async def seed_initial_data() -> None:
         # Clash of Clans: создаём базовые товары, если их ещё нет
         # Clash of Clans: пока не используем в витрине — оставляем категорию пустой
 
+        # Скрываем устаревшие товары (старые названия/цены/ссылки), не входящие в актуальный список
+        brawl_allowed = {name for name, *_ in brawl_products_spec}
+        royale_allowed = {name for name, *_ in royale_products_spec}
+        for cat_id, allowed in (
+            (brawl.id, brawl_allowed),
+            (royale.id, royale_allowed),
+        ):
+            res = await session.execute(
+                select(Product).where(Product.category_id == cat_id)
+            )
+            for prod in res.scalars().all():
+                if prod.name not in allowed:
+                    prod.is_active = False
+
         await session.commit()
