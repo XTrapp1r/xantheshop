@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import html
 import logging
 
 import httpx
@@ -137,7 +138,7 @@ def format_order_payment_screen_paid_html(order: Order) -> str:
     return (
         "✅ Ваш заказ создан\n\n"
         f"Номер заказа: <b>#{order.id}</b>\n"
-        f"Товар: <b>{order.product_name_snapshot}</b>\n"
+        f"Товар: <b>{html.escape(order.product_name_snapshot)}</b>\n"
         f"Количество: <b>{order.quantity}</b>\n"
         f"Сумма: <b>{order.total_price} ₽</b>\n\n"
         "<b>✅ Оплачено</b>"

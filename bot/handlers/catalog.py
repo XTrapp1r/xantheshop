@@ -1,3 +1,5 @@
+import html
+
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
@@ -223,16 +225,17 @@ async def process_supercell_id(message: Message, state: FSMContext) -> None:
 
     text = (
         "✅ Проверьте данные заказа:\n\n"
-        f"Товар: <b>{product.name}</b>\n"
+        f"Товар: <b>{html.escape(product.name)}</b>\n"
         f"Цена: <b>{product.price} ₽</b>\n"
         f"Количество: <b>{quantity}</b>\n"
         f"Итого: <b>{total} ₽</b>\n"
-        f"Supercell ID: <b>{supercell_id}</b>\n\n"
+        f"Supercell ID: <b>{html.escape(supercell_id)}</b>\n\n"
         "Если всё верно — подтвердите заказ.\n"
         "Если что-то не так — можно отменить и оформить заново."
     )
 
-    hide = await message.answer("\u200b", reply_markup=ReplyKeyboardRemove())
+    # Нельзя слать «пустой» текст (\u200b): при HTML parse_mode Telegram часто отвечает 400.
+    hide = await message.answer(".", reply_markup=ReplyKeyboardRemove())
     try:
         await message.bot.delete_message(message.chat.id, hide.message_id)
     except Exception:
@@ -311,7 +314,7 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext) -> None:
     text = (
         "✅ Ваш заказ создан\n\n"
         f"Номер заказа: <b>#{order.id}</b>\n"
-        f"Товар: <b>{order.product_name_snapshot}</b>\n"
+        f"Товар: <b>{html.escape(order.product_name_snapshot)}</b>\n"
         f"Количество: <b>{order.quantity}</b>\n"
         f"Сумма: <b>{order.total_price} ₽</b>\n\n"
         "💸 Для оплаты нажмите кнопку ниже.\n\n"
@@ -325,7 +328,7 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext) -> None:
     )
     await order_service.set_order_payment_telegram_message_id(order.id, msg.message_id)
 
-    hide = await callback.message.answer("\u200b", reply_markup=ReplyKeyboardRemove())
+    hide = await callback.message.answer(".", reply_markup=ReplyKeyboardRemove())
     try:
         await callback.message.bot.delete_message(
             callback.message.chat.id, hide.message_id
