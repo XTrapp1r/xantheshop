@@ -74,7 +74,7 @@ async def _admin_last_orders(callback: CallbackQuery) -> None:
             f"Заказ #{o.id}\n"
             f"{o.product_name_snapshot} | {o.quantity} шт. | {o.total_price} ₽\n"
             f"Статус: {human_status(o.status)}",
-            reply_markup=admin_order_status_kb(o.id),
+            reply_markup=admin_order_status_kb(o.id, o.status),
         )
 
     await callback.answer()
@@ -121,6 +121,31 @@ async def admin_set_status(callback: CallbackQuery) -> None:
 
     db_status = allowed_statuses[status]
 
+    existing = await order_service.get_order_by_id(order_id)
+    if existing is None:
+        await callback.answer("Заказ не найден.", show_alert=True)
+        return
+
+    if existing.status == db_status:
+        await callback.message.edit_text(
+            f"Заказ #{existing.id}\n"
+            f"{existing.product_name_snapshot} | {existing.quantity} шт. | {existing.total_price} ₽\n"
+            f"Статус: {human_status(existing.status)}",
+            reply_markup=admin_order_status_kb(existing.id, existing.status),
+        )
+        await callback.answer("Статус уже установлен.")
+        return
+
+    if existing.status in (OrderStatus.DONE, OrderStatus.CANCELLED):
+        await callback.message.edit_text(
+            f"Заказ #{existing.id}\n"
+            f"{existing.product_name_snapshot} | {existing.quantity} шт. | {existing.total_price} ₽\n"
+            f"Статус: {human_status(existing.status)}",
+            reply_markup=None,
+        )
+        await callback.answer("Заказ уже завершён.", show_alert=True)
+        return
+
     order, client = await order_service.update_order_status(order_id, db_status)
     if order is None or client is None:
         await callback.answer("Заказ не найден.", show_alert=True)
@@ -131,7 +156,7 @@ async def admin_set_status(callback: CallbackQuery) -> None:
         f"Заказ #{order.id}\n"
         f"{order.product_name_snapshot} | {order.quantity} шт. | {order.total_price} ₽\n"
         f"Статус: {human_status(order.status)}",
-        reply_markup=admin_order_status_kb(order.id),
+        reply_markup=admin_order_status_kb(order.id, order.status),
     )
 
     # Уведомляем клиента

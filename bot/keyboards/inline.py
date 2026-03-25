@@ -3,7 +3,7 @@ from typing import Iterable, Optional
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from bot.database.models import Category, Product
+from bot.database.models import Category, OrderStatus, Product
 
 
 def categories_kb(categories: Iterable[Category]) -> InlineKeyboardMarkup:
@@ -118,15 +118,26 @@ def guarantees_link_kb(url: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def admin_order_status_kb(order_id: int) -> InlineKeyboardMarkup:
+def admin_order_status_kb(order_id: int, status: str) -> Optional[InlineKeyboardMarkup]:
     """
     Клавиатура управления статусом заказа для админов.
+    Кнопки показываются только для допустимых переходов: после действия лишние исчезают.
     """
+    if status in (OrderStatus.DONE, OrderStatus.CANCELLED):
+        return None
+    if status not in (
+        OrderStatus.NEW,
+        OrderStatus.PAID,
+        OrderStatus.IN_PROGRESS,
+    ):
+        return None
+
     builder = InlineKeyboardBuilder()
-    builder.button(
-        text="✅ Взять в работу",
-        callback_data=f"admin:set_status:{order_id}:in_progress",
-    )
+    if status in (OrderStatus.NEW, OrderStatus.PAID):
+        builder.button(
+            text="✅ Взять в работу",
+            callback_data=f"admin:set_status:{order_id}:in_progress",
+        )
     builder.button(
         text="✔ Выполнено",
         callback_data=f"admin:set_status:{order_id}:done",

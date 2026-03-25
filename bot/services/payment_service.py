@@ -214,7 +214,7 @@ async def notify_order_paid_and_admins(order: Order, user: User, bot: Bot) -> No
             await bot.send_message(
                 chat_id=admin_id,
                 text=admin_text,
-                reply_markup=admin_order_status_kb(order.id),
+                reply_markup=admin_order_status_kb(order.id, order.status),
             )
         except Exception:
             logger.exception("Не удалось отправить уведомление админу admin_id=%s", admin_id)
