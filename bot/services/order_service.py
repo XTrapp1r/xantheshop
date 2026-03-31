@@ -113,19 +113,43 @@ async def get_active_orders() -> List[Order]:
 
 async def get_stats() -> Tuple[int, int, int]:
     """
-    Возвращает: (всего заказов, заказов new, общая сумма всех заказов).
+    Возвращает: (активных заказов, активных new, общая сумма активных заказов
+    по активным товарам).
     """
     async with AsyncSessionLocal() as session:
-        total_res = await session.execute(select(func.count(Order.id)))
+        active_statuses = [
+            OrderStatus.NEW,
+            OrderStatus.PAID,
+            OrderStatus.IN_PROGRESS,
+        ]
+
+        total_res = await session.execute(
+            select(func.count(Order.id))
+            .join(Product, Order.product_id == Product.id)
+            .where(
+                Order.status.in_(active_statuses),
+                Product.is_active.is_(True),
+            )
+        )
         total_orders = total_res.scalar_one() or 0
 
         new_res = await session.execute(
-            select(func.count(Order.id)).where(Order.status == OrderStatus.NEW)
+            select(func.count(Order.id))
+            .join(Product, Order.product_id == Product.id)
+            .where(
+                Order.status == OrderStatus.NEW,
+                Product.is_active.is_(True),
+            )
         )
         new_orders = new_res.scalar_one() or 0
 
         sum_res = await session.execute(
             select(func.coalesce(func.sum(Order.total_price), 0))
+            .join(Product, Order.product_id == Product.id)
+            .where(
+                Order.status.in_(active_statuses),
+                Product.is_active.is_(True),
+            )
         )
         total_amount = sum_res.scalar_one() or 0
 

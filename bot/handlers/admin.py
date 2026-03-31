@@ -85,9 +85,9 @@ async def _admin_stats(callback: CallbackQuery) -> None:
 
     lines = [
         "📊 <b>Статистика заказов</b>\n",
-        f"Всего заказов: <b>{total_orders}</b>",
-        f"Новых заказов: <b>{new_orders}</b>",
-        f"Общая сумма всех заказов: <b>{total_amount} ₽</b>",
+        f"Активных заказов: <b>{total_orders}</b>",
+        f"Новых активных заказов: <b>{new_orders}</b>",
+        f"Общая сумма активных заказов: <b>{total_amount} ₽</b>",
         "",
         f"Статус по умолчанию: {human_status(OrderStatus.NEW)}",
     ]
