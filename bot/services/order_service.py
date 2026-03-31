@@ -1,9 +1,12 @@
+from datetime import datetime, timezone
 from typing import List, Tuple
 
 from sqlalchemy import Select, func, select
 
 from bot.database.db import AsyncSessionLocal
 from bot.database.models import Order, OrderStatus, Product, User
+
+STATS_ACCUMULATION_START = datetime(2026, 3, 31, 0, 0, 0, tzinfo=timezone.utc)
 
 
 async def create_order(
@@ -113,8 +116,8 @@ async def get_active_orders() -> List[Order]:
 
 async def get_stats() -> Tuple[int, int, int]:
     """
-    Возвращает: (активных заказов, активных new, общая сумма активных заказов
-    по активным товарам).
+    Возвращает: (всего заказов с момента старта статы, активных сейчас,
+    накопленный заработок с момента старта статы).
     """
     async with AsyncSessionLocal() as session:
         active_statuses = [
@@ -122,38 +125,39 @@ async def get_stats() -> Tuple[int, int, int]:
             OrderStatus.PAID,
             OrderStatus.IN_PROGRESS,
         ]
+        revenue_statuses = [
+            OrderStatus.PAID,
+            OrderStatus.IN_PROGRESS,
+            OrderStatus.DONE,
+        ]
 
         total_res = await session.execute(
             select(func.count(Order.id))
-            .join(Product, Order.product_id == Product.id)
             .where(
-                Order.status.in_(active_statuses),
-                Product.is_active.is_(True),
+                Order.created_at >= STATS_ACCUMULATION_START,
             )
         )
         total_orders = total_res.scalar_one() or 0
 
-        new_res = await session.execute(
+        active_res = await session.execute(
             select(func.count(Order.id))
-            .join(Product, Order.product_id == Product.id)
             .where(
-                Order.status == OrderStatus.NEW,
-                Product.is_active.is_(True),
+                Order.created_at >= STATS_ACCUMULATION_START,
+                Order.status.in_(active_statuses),
             )
         )
-        new_orders = new_res.scalar_one() or 0
+        active_orders = active_res.scalar_one() or 0
 
         sum_res = await session.execute(
             select(func.coalesce(func.sum(Order.total_price), 0))
-            .join(Product, Order.product_id == Product.id)
             .where(
-                Order.status.in_(active_statuses),
-                Product.is_active.is_(True),
+                Order.created_at >= STATS_ACCUMULATION_START,
+                Order.status.in_(revenue_statuses),
             )
         )
         total_amount = sum_res.scalar_one() or 0
 
-        return total_orders, new_orders, total_amount
+        return total_orders, active_orders, total_amount
 
 
 async def update_order_status(

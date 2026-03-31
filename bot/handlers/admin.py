@@ -81,13 +81,13 @@ async def _admin_last_orders(callback: CallbackQuery) -> None:
 
 
 async def _admin_stats(callback: CallbackQuery) -> None:
-    total_orders, new_orders, total_amount = await order_service.get_stats()
+    total_orders, active_orders, total_amount = await order_service.get_stats()
 
     lines = [
         "📊 <b>Статистика заказов</b>\n",
-        f"Активных заказов: <b>{total_orders}</b>",
-        f"Новых активных заказов: <b>{new_orders}</b>",
-        f"Общая сумма активных заказов: <b>{total_amount} ₽</b>",
+        f"Всего заказов (с 31.03.2026): <b>{total_orders}</b>",
+        f"Активных сейчас: <b>{active_orders}</b>",
+        f"Накопленный заработок: <b>{total_amount} ₽</b>",
         "",
         f"Статус по умолчанию: {human_status(OrderStatus.NEW)}",
     ]
