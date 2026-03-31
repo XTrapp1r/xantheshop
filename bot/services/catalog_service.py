@@ -10,7 +10,7 @@ async def get_categories() -> List[Category]:
     async with AsyncSessionLocal() as session:
         result = await session.execute(
             select(Category)
-            .where(Category.name.in_(["Brawl Stars", "Clash Royale"]))
+            .where(Category.name.in_(["Brawl Stars"]))
             .order_by(Category.id)
         )
         return list(result.scalars().all())

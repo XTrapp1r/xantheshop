@@ -163,7 +163,7 @@ async def admin_set_status(callback: CallbackQuery) -> None:
     text_for_client: str
     if db_status == OrderStatus.IN_PROGRESS:
         text_for_client = (
-            f"Ваш заказ №{order.id} взят в работу."
+            f"Ваш заказ №{order.id} взят в работу. Примите запрос в друзья в игре!"
         )
     elif db_status == OrderStatus.DONE:
         text_for_client = (

@@ -36,17 +36,16 @@ async def seed_initial_data() -> None:
         coc = await _get_or_create_category(session, "Clash of Clans")
 
         # Brawl Stars: обновляем или создаём нужные товары
-        # Цены в рублях: для тестов временно 10 ₽ (верни реальные перед продом).
         brawl_products_spec = [
             (
                 "Brawl Pass",
-                10,
+                790,
                 "Стандартный боевой пропуск для Brawl Stars.",
                 "https://pally.info/transfer/w7eoaXNQmp",
             ),
             (
                 "Brawl Pass Plus",
-                10,
+                990,
                 "Расширенный боевой пропуск с дополнительными наградами.",
                 "https://pally.info/transfer/rmdWAxBJvV",
             ),
@@ -71,15 +70,8 @@ async def seed_initial_data() -> None:
                     )
                 )
 
-        # Clash Royale: создаём базовые товары, если их ещё нет
-        royale_products_spec = [
-            (
-                "Pass Royale",
-                10,
-                "Сезонный пропуск Clash Royale с наградами.",
-                "https://pally.info/transfer/AmJ1gO1kvO",
-            ),
-        ]
+        # Clash Royale: скрываем все товары из витрины
+        royale_products_spec = []
         for name, price, desc, payment_url in royale_products_spec:
             existing = await _get_product_by_name(session, royale.id, name)
             if existing:
